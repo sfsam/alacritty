@@ -68,6 +68,7 @@ objc2-app-kit = { version = "0.2.2", default-features = false, features = [
     "NSResponder",
     "NSView",
     "NSWindow",
+    "NSWindowTab",
 ] }
 
 [target.'cfg(windows)'.dependencies]
