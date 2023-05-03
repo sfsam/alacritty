@@ -22,6 +22,7 @@ use std::fmt::{self, Display, Formatter};
 use {
     cocoa::appkit::NSColorSpace,
     cocoa::base::{id, nil, NO, YES},
+    cocoa::foundation::NSString,
     objc::{msg_send, sel, sel_impl},
     winit::platform::macos::{OptionAsAlt, WindowAttributesExtMacOS, WindowExtMacOS},
 };
@@ -258,6 +259,28 @@ impl Window {
         if visible != self.mouse_visible {
             self.mouse_visible = visible;
             self.window.set_cursor_visible(visible);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn set_title_dimensions(&self, size_info: &SizeInfo) {
+        let title = self.title();
+        let cols = size_info.columns;
+        let rows = size_info.screen_lines;
+        let win_title = format!("{title} — {cols}×{rows}");
+        self.window.set_title(&win_title);
+
+        // Reset tab title so it doesn't show dimensions.
+        let ns_view = match self.raw_window_handle() {
+            RawWindowHandle::AppKit(handle) => handle.ns_view.as_ptr() as id,
+            _ => return,
+        };
+        unsafe {
+            let tab_title = NSString::alloc(nil).init_str(self.title());
+            let ns_window: id = msg_send![ns_view, window];
+            let tab: id = msg_send![ns_window, tab];
+            let _: () = msg_send![tab, setTitle: tab_title];
+            let _: () = msg_send![tab_title, release];
         }
     }
 
