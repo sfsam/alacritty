@@ -1863,12 +1863,16 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     TerminalEvent::Title(title) => {
                         if !self.ctx.preserve_title && self.ctx.config.window.dynamic_title {
                             self.ctx.window().set_title(title);
+                            let size_info = self.ctx.display.size_info;
+                            self.ctx.window().set_title_dimensions(&size_info);
                         }
                     },
                     TerminalEvent::ResetTitle => {
                         let window_config = &self.ctx.config.window;
                         if !self.ctx.preserve_title && window_config.dynamic_title {
                             self.ctx.display.window.set_title(window_config.identity.title.clone());
+                            let size_info = self.ctx.display.size_info;
+                            self.ctx.window().set_title_dimensions(&size_info);
                         }
                     },
                     TerminalEvent::Bell => {
