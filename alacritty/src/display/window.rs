@@ -24,7 +24,7 @@ use std::fmt::{self, Display, Formatter};
 use {
     objc2::MainThreadMarker,
     objc2_app_kit::{NSColorSpace, NSView},
-    objc2_foundation::{NSString, is_main_thread},
+    objc2_foundation::{NSString, NSPoint, is_main_thread},
     winit::platform::macos::{OptionAsAlt, WindowAttributesExtMacOS, WindowExtMacOS},
 };
 
@@ -306,6 +306,34 @@ impl Window {
         let tab_title = NSString::from_str(self.title());
         unsafe {
             view.window().unwrap().tab().setTitle(Some(&tab_title));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn center(&self) {
+        let view = match self.raw_window_handle() {
+            RawWindowHandle::AppKit(handle) => {
+                assert!(MainThreadMarker::new().is_some());
+                unsafe { handle.ns_view.cast::<NSView>().as_ref() }
+            },
+            _ => return,
+        };
+
+        view.window().unwrap().center();
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn cascade_top_left_from_point(&self, point: NSPoint) -> NSPoint {
+        let view = match self.raw_window_handle() {
+            RawWindowHandle::AppKit(handle) => {
+                assert!(is_main_thread());
+                unsafe { handle.ns_view.cast::<NSView>().as_ref() }
+            },
+            _ => return NSPoint::new(0.0, 0.0),
+        };
+
+        unsafe {
+            return view.window().unwrap().cascadeTopLeftFromPoint(point);
         }
     }
 
