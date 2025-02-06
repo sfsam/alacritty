@@ -71,6 +71,7 @@ objc2-app-kit = { version = "0.3.1", default-features = false, features = [
     "NSWindow",
     "NSWindowTab",
 ] }
+indexmap = "2.9.0"
 
 [target.'cfg(windows)'.dependencies]
 dirs = "6.0.0"
