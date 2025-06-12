@@ -24,7 +24,7 @@ use std::fmt::{self, Display, Formatter};
 use {
     objc2::MainThreadMarker,
     objc2_app_kit::{NSColorSpace, NSView},
-    objc2_foundation::{NSString, NSPoint, is_main_thread},
+    objc2_foundation::{NSString, NSPoint},
     winit::platform::macos::{OptionAsAlt, WindowAttributesExtMacOS, WindowExtMacOS},
 };
 
@@ -326,7 +326,7 @@ impl Window {
     pub fn cascade_top_left_from_point(&self, point: NSPoint) -> NSPoint {
         let view = match self.raw_window_handle() {
             RawWindowHandle::AppKit(handle) => {
-                assert!(is_main_thread());
+                assert!(MainThreadMarker::new().is_some());
                 unsafe { handle.ns_view.cast::<NSView>().as_ref() }
             },
             _ => return NSPoint::new(0.0, 0.0),
