@@ -594,6 +594,10 @@ configuration. See *alacritty*(5) for full configuration format documentation.
 :  _"Command"_
 :[
 :  _"SelectLastTab"_
+|  _","_
+:  _"Command"_
+:[
+:  _"OpenConfig"_
 
 # SEE ALSO
 
