@@ -987,6 +987,8 @@ _https://docs.rs/winit/latest/winit/keyboard/enum.Key.html#variant.Dead_
 			Select the ninth tab.
 		*SelectLastTab*
 			Select the last tab.
+		*OpenConfig*
+			Open the configuration file in the default text editor.
 
 		_Linux/BSD exclusive:_
 
