@@ -304,9 +304,7 @@ impl Window {
         };
 
         let tab_title = NSString::from_str(self.title());
-        unsafe {
-            view.window().unwrap().tab().setTitle(Some(&tab_title));
-        }
+        view.window().unwrap().tab().setTitle(Some(&tab_title));
     }
 
     #[cfg(target_os = "macos")]
@@ -332,9 +330,7 @@ impl Window {
             _ => return NSPoint::new(0.0, 0.0),
         };
 
-        unsafe {
-            return view.window().unwrap().cascadeTopLeftFromPoint(point);
-        }
+        return view.window().unwrap().cascadeTopLeftFromPoint(point);
     }
 
     #[cfg(not(any(target_os = "macos", windows)))]
