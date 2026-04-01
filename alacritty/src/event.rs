@@ -65,6 +65,9 @@ use crate::polling::ipc::{self, SocketReply};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::window_context::WindowContext;
 
+#[cfg(target_os = "macos")]
+use {indexmap::map::IndexMap, objc2_foundation::NSPoint};
+
 /// Duration after the last user input until an unlimited search is performed.
 pub const TYPING_SEARCH_DELAY: Duration = Duration::from_millis(500);
 
@@ -98,6 +101,8 @@ pub struct Processor {
     global_ipc_options: ParsedOptions,
     cli_options: CliOptions,
     config: Rc<UiConfig>,
+    #[cfg(target_os = "macos")]
+    cascade_points: IndexMap<WindowId, NSPoint, RandomState>,
 }
 
 impl Processor {
@@ -141,6 +146,8 @@ impl Processor {
             #[cfg(unix)]
             global_ipc_options: Default::default(),
             config_monitor,
+            #[cfg(target_os = "macos")]
+            cascade_points: Default::default(),
         }
     }
 
@@ -159,6 +166,14 @@ impl Processor {
             self.config.clone(),
             window_options,
         )?;
+
+        #[cfg(target_os = "macos")]
+        {
+            if self.config.window.position.is_none() {
+                window_context.display.window.center();
+                self.seed_cascade_window(&window_context);
+            }
+        }
 
         self.gl_config = Some(window_context.display.gl_context().config());
         self.windows.insert(window_context.id(), window_context);
@@ -180,6 +195,8 @@ impl Processor {
         config_overrides.extend_from_slice(&self.global_ipc_options);
         let mut config = self.config.clone();
         config = config_overrides.override_config_rc(config);
+        #[cfg(target_os = "macos")]
+        let should_cascade = config.window.position.is_none();
 
         let window_context = WindowContext::additional(
             gl_config,
@@ -190,8 +207,30 @@ impl Processor {
             config_overrides,
         )?;
 
+        #[cfg(target_os = "macos")]
+        if should_cascade {
+            self.cascade_window(&window_context);
+        }
+
         self.windows.insert(window_context.id(), window_context);
         Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn cascade_window(&mut self, window_context: &WindowContext) {
+        let pt = self.cascade_points.values().last().copied().unwrap_or(NSPoint::new(0.0, 0.0));
+        self.cascade_points.insert(
+            window_context.id(),
+            window_context.display.window.cascade_top_left_from_point(pt),
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    fn seed_cascade_window(&mut self, window_context: &WindowContext) {
+        self.cascade_points.insert(
+            window_context.id(),
+            window_context.display.window.next_cascade_top_left_from_current_position(),
+        );
     }
 
     /// Run the event loop.
@@ -425,6 +464,10 @@ impl ApplicationHandler<Event> for Processor {
                     },
                     _ => return,
                 };
+
+                // Remove the cascade point associated with the closed terminal.
+                #[cfg(target_os = "macos")]
+                self.cascade_points.shift_remove(window_id);
 
                 // Unschedule pending events.
                 self.scheduler.unschedule_window(window_context.id());
