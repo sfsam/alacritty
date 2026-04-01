@@ -135,7 +135,7 @@ pub fn load(options: &mut Options) -> UiConfig {
         .unwrap_or_else(|| {
             let mut config = UiConfig::default();
             match config_path {
-                Some(config_path) => config.config_paths.push(config_path),
+                Some(config_path) => config.config_paths.push(absolute_config_path(&config_path)),
                 None => info!(target: LOG_TARGET_CONFIG, "No config file found; using default"),
             }
             config
@@ -197,14 +197,24 @@ fn parse_config(
     config_paths: &mut Vec<PathBuf>,
     recursion_limit: usize,
 ) -> Result<Value> {
-    config_paths.push(path.to_owned());
+    let path = absolute_config_path(path);
+    config_paths.push(path.clone());
 
     // Deserialize the configuration file.
-    let config = deserialize_config(path, false)?;
+    let config = deserialize_config(&path, false)?;
 
     // Merge config with imports.
-    let imports = load_imports(&config, path, config_paths, recursion_limit);
+    let imports = load_imports(&config, &path, config_paths, recursion_limit);
     Ok(serde_utils::merge(imports, config))
+}
+
+/// Make config paths stable against future working directory changes.
+fn absolute_config_path(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_owned()
+    } else {
+        env::current_dir().map_or_else(|_| path.to_owned(), |cwd| cwd.join(path))
+    }
 }
 
 /// Deserialize a configuration file.

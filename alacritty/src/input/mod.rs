@@ -440,6 +440,14 @@ impl<T: EventListener> Execute<T> for Action {
             Action::SelectTab9 => ctx.window().select_tab_at_index(8),
             #[cfg(target_os = "macos")]
             Action::SelectLastTab => ctx.window().select_last_tab(),
+            #[cfg(target_os = "macos")]
+            Action::OpenConfig => {
+                // Get the first config path from the loaded configuration
+                if let Some(config_path) = ctx.config().config_paths.first() {
+                    // On macOS, use the default text editor for plaintext files
+                    ctx.spawn_daemon("open", ["-t", config_path.to_string_lossy().as_ref()]);
+                }
+            },
             _ => (),
         }
     }
