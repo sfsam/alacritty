@@ -48,6 +48,7 @@ dependencies = [
  "gl_generator",
  "glutin",
  "home",
+ "indexmap",
  "libc",
  "log",
  "notify",
