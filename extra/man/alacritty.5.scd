@@ -207,11 +207,39 @@ This section documents the *[window]* table of the configuration file.
 
 	Default: _"Normal"_
 
+## SCROLLBAR
+
+This section documents the *[window.scrollbar]* table of the configuration file.
+
+*show* = _true_ | _false_
+
+	Show the scrollbar along the right edge of the window. In windowed mode
+	the window is made wider to accommodate the scrollbar, so the number of
+	terminal columns is unaffected. In fullscreen mode the columns are
+	reduced instead.
+
+	Default: _false_
+
+*track_color* = _"#rrggbb"_
+
+	Background color of the scrollbar track.
+
+	Default: _"#222222"_
+
+*thumb_color* = _"#rrggbb"_
+
+	Color of the scrollbar thumb.
+
+	Default: _"#444444"_
+
 Example:
 	*[window]*++
 padding = { x = _3_, y = _3_ }++
 dynamic_padding = _true_++
 opacity = _0.9_
+
+	*[window.scrollbar]*++
+show = _true_
 
 
 # SCROLLING

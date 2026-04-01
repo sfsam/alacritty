@@ -478,6 +478,27 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         self.ctx.mouse_mut().x = x;
         self.ctx.mouse_mut().y = y;
 
+        // Handle active scrollbar drag before any other mouse processing.
+        if let Some((drag_start_y, drag_start_offset, track_range)) =
+            self.ctx.display().scrollbar_drag_start
+        {
+            if track_range > 0. {
+                let total_lines = self.ctx.terminal().grid().total_lines();
+                let history_size =
+                    total_lines.saturating_sub(self.ctx.size_info().screen_lines()) as f32;
+                let dy = y as f32 - drag_start_y;
+                let new_offset = (drag_start_offset as f32 - dy * history_size / track_range)
+                    .round()
+                    .clamp(0., history_size) as usize;
+                let current_offset = self.ctx.terminal().grid().display_offset();
+                let delta = new_offset as i32 - current_offset as i32;
+                if delta != 0 {
+                    self.ctx.scroll(Scroll::Delta(delta));
+                }
+            }
+            return;
+        }
+
         let inside_text_area = size_info.contains_point(x, y);
         let cell_side = self.cell_side(x);
 
@@ -620,6 +641,36 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
         let msg = format!("\x1b[<{};{};{}{}", button, point.column + 1, point.line + 1, c);
         self.ctx.write_to_pty(msg.into_bytes());
+    }
+
+    /// Handle a left-button press on the scrollbar track or thumb.
+    fn on_scrollbar_press(&mut self, y: f32, display_offset: usize, total_lines: usize) {
+        let size_info = self.ctx.size_info();
+        let screen_lines = size_info.screen_lines();
+        let history_size = total_lines.saturating_sub(screen_lines);
+
+        if history_size == 0 {
+            return;
+        }
+
+        let track_h = size_info.height();
+        let thumb_h = ((screen_lines as f32 / total_lines as f32) * track_h)
+            .max(Display::SCROLLBAR_MIN_THUMB_HEIGHT);
+        let track_range = track_h - thumb_h;
+
+        let scroll_fraction = display_offset as f32 / history_size as f32;
+        let thumb_y = (1. - scroll_fraction) * track_range;
+
+        if y >= thumb_y && y <= thumb_y + thumb_h {
+            // Click on thumb: start drag.
+            self.ctx.display().scrollbar_drag_start = Some((y, display_offset, track_range));
+        } else if y < thumb_y {
+            // Click on track above thumb: scroll toward history.
+            self.ctx.scroll(Scroll::PageUp);
+        } else {
+            // Click on track below thumb: scroll toward bottom.
+            self.ctx.scroll(Scroll::PageDown);
+        }
     }
 
     fn on_mouse_press(&mut self, button: MouseButton) {
@@ -1001,6 +1052,28 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             _ => (),
         }
 
+        // Handle scrollbar interaction before normal mouse processing.
+        if button == MouseButton::Left && self.ctx.size_info().in_scrollbar(self.ctx.mouse().x) {
+            match state {
+                ElementState::Pressed => {
+                    let y = self.ctx.mouse().y as f32;
+                    let display_offset = self.ctx.terminal().grid().display_offset();
+                    let total_lines = self.ctx.terminal().grid().total_lines();
+                    self.ctx.clear_selection();
+                    self.on_scrollbar_press(y, display_offset, total_lines);
+                },
+                ElementState::Released => {
+                    self.ctx.display().scrollbar_drag_start = None;
+                },
+            }
+            return;
+        }
+
+        // End a scrollbar drag when the left button is released anywhere.
+        if button == MouseButton::Left && state == ElementState::Released {
+            self.ctx.display().scrollbar_drag_start = None;
+        }
+
         // Skip normal mouse events if the message bar has been clicked.
         if self.message_bar_cursor_state() == Some(CursorIcon::Pointer)
             && state == ElementState::Pressed
@@ -1102,6 +1175,11 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
 
     /// Icon state of the cursor.
     fn cursor_state(&mut self) -> CursorIcon {
+        // Use a plain arrow cursor over the scrollbar.
+        if self.ctx.size_info().in_scrollbar(self.ctx.mouse().x) {
+            return CursorIcon::Default;
+        }
+
         let display_offset = self.ctx.terminal().grid().display_offset();
         let point = self.ctx.mouse().point(&self.ctx.size_info(), display_offset);
         let hyperlink = self.ctx.terminal().grid()[point].hyperlink();
@@ -1309,6 +1387,7 @@ mod tests {
                     0.,
                     0.,
                     false,
+                    0.,
                 );
 
                 let mut terminal = Term::new(cfg.term_options(), &size, MockEventProxy);

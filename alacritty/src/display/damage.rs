@@ -316,6 +316,7 @@ mod tests {
             2.,
             2.,
             true,
+            0.,
         )
         .into();
 
@@ -359,7 +360,7 @@ mod tests {
         let y = 40;
         let height = 5;
         let width = 10;
-        let size_info = SizeInfo::new(viewport_height, viewport_height, 5., 5., 0., 0., true);
+        let size_info = SizeInfo::new(viewport_height, viewport_height, 5., 5., 0., 0., true, 0.);
         frame_damage.add_viewport_rect(&size_info, x, y, width, height);
         assert_eq!(frame_damage.rects[0], Rect {
             x,

@@ -11,6 +11,7 @@ use winit::window::{Fullscreen, Theme as WinitTheme, WindowLevel as WinitWindowL
 use alacritty_config_derive::{ConfigDeserialize, SerdeReplace};
 
 use crate::config::LOG_TARGET_CONFIG;
+use crate::config::scrollbar::ScrollbarConfig;
 use crate::config::ui_config::{Delta, Percentage};
 
 /// Default Alacritty name, used for window title and class.
@@ -65,6 +66,9 @@ pub struct WindowConfig {
 
     /// Window level.
     pub level: WindowLevel,
+
+    /// Scrollbar configuration.
+    pub scrollbar: ScrollbarConfig,
 }
 
 impl Default for WindowConfig {
@@ -85,6 +89,7 @@ impl Default for WindowConfig {
             decorations_theme_variant: Default::default(),
             option_as_alt: Default::default(),
             level: Default::default(),
+            scrollbar: Default::default(),
         }
     }
 }
