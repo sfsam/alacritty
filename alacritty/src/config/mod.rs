@@ -17,6 +17,7 @@ pub mod debug;
 pub mod font;
 pub mod general;
 pub mod monitor;
+pub mod scrollbar;
 pub mod scrolling;
 pub mod selection;
 pub mod serde_utils;

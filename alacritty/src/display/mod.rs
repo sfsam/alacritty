@@ -166,6 +166,9 @@ pub struct SizeInfo<T = f32> {
 
     /// Number of columns in the viewport.
     columns: usize,
+
+    /// Width reserved for the scrollbar (0 if hidden).
+    scrollbar_width: T,
 }
 
 impl From<SizeInfo<f32>> for SizeInfo<u32> {
@@ -178,7 +181,8 @@ impl From<SizeInfo<f32>> for SizeInfo<u32> {
             padding_x: size_info.padding_x as u32,
             padding_y: size_info.padding_y as u32,
             screen_lines: size_info.screen_lines,
-            columns: size_info.screen_lines,
+            columns: size_info.columns,
+            scrollbar_width: size_info.scrollbar_width as u32,
         }
     }
 }
@@ -224,6 +228,11 @@ impl<T: Clone + Copy> SizeInfo<T> {
     pub fn padding_y(&self) -> T {
         self.padding_y
     }
+
+    #[inline]
+    pub fn scrollbar_width(&self) -> T {
+        self.scrollbar_width
+    }
 }
 
 impl SizeInfo<f32> {
@@ -236,16 +245,20 @@ impl SizeInfo<f32> {
         mut padding_x: f32,
         mut padding_y: f32,
         dynamic_padding: bool,
+        scrollbar_width: f32,
     ) -> SizeInfo {
+        // The terminal grid occupies the window width minus the scrollbar.
+        let effective_width = (width - scrollbar_width).max(0.);
+
         if dynamic_padding {
-            padding_x = Self::dynamic_padding(padding_x.floor(), width, cell_width);
+            padding_x = Self::dynamic_padding(padding_x.floor(), effective_width, cell_width);
             padding_y = Self::dynamic_padding(padding_y.floor(), height, cell_height);
         }
 
         let lines = (height - 2. * padding_y) / cell_height;
         let screen_lines = cmp::max(lines as usize, MIN_SCREEN_LINES);
 
-        let columns = (width - 2. * padding_x) / cell_width;
+        let columns = (effective_width - 2. * padding_x) / cell_width;
         let columns = cmp::max(columns as usize, MIN_COLUMNS);
 
         SizeInfo {
@@ -257,12 +270,19 @@ impl SizeInfo<f32> {
             padding_y: padding_y.floor(),
             screen_lines,
             columns,
+            scrollbar_width,
         }
     }
 
     #[inline]
     pub fn reserve_lines(&mut self, count: usize) {
         self.screen_lines = cmp::max(self.screen_lines.saturating_sub(count), MIN_SCREEN_LINES);
+    }
+
+    /// Check if an X coordinate falls within the scrollbar region.
+    #[inline]
+    pub fn in_scrollbar(&self, x: usize) -> bool {
+        self.scrollbar_width > 0. && x >= (self.width - self.scrollbar_width) as usize
     }
 
     /// Check if coordinates are inside the terminal grid.
@@ -280,6 +300,32 @@ impl SizeInfo<f32> {
     #[inline]
     fn dynamic_padding(padding: f32, dimension: f32, cell_dimension: f32) -> f32 {
         padding + ((dimension - 2. * padding) % cell_dimension) / 2.
+    }
+
+    /// Calculate scrollbar thumb geometry `(y, height, track_range)`.
+    pub fn scrollbar_thumb_geometry(
+        &self,
+        display_offset: usize,
+        total_lines: usize,
+        min_thumb_height: f32,
+    ) -> Option<(f32, f32, f32)> {
+        let history_size = total_lines.saturating_sub(self.screen_lines);
+        if history_size == 0 {
+            return None;
+        }
+
+        let track_h = self.height;
+        let thumb_h =
+            ((self.screen_lines as f32 / total_lines as f32) * track_h).max(min_thumb_height);
+        let thumb_h = thumb_h.min(track_h);
+        let track_range = track_h - thumb_h;
+
+        let scroll_fraction = display_offset as f32 / history_size as f32;
+        // scroll_fraction=0 -> bottom (thumb_y = track_h - thumb_h)
+        // scroll_fraction=1 -> top    (thumb_y = 0)
+        let thumb_y = (1. - scroll_fraction) * track_range;
+
+        Some((thumb_y, thumb_h, track_range))
     }
 }
 
@@ -388,6 +434,12 @@ pub struct Display {
     // Mouse point position when highlighting hints.
     hint_mouse_point: Option<Point>,
 
+    /// Scrollbar drag state: (start_y, start_offset, track_range).
+    ///
+    /// `track_range` is `track_height - thumb_height` at drag start, used to map
+    /// pixel deltas to scroll offsets without recomputing the clamped thumb height.
+    pub scrollbar_drag_start: Option<(f32, usize, f32)>,
+
     renderer: ManuallyDrop<Renderer>,
     renderer_preference: Option<RendererPreference>,
 
@@ -445,6 +497,7 @@ impl Display {
         });
 
         let padding = config.window.padding(window.scale_factor as f32);
+        let scrollbar_width = config.window.scrollbar.physical_width(window.scale_factor as f32);
         let viewport_size = window.inner_size();
 
         // Create new size with at least one column and row.
@@ -456,6 +509,7 @@ impl Display {
             padding.0,
             padding.1,
             config.window.dynamic_padding && config.window.dimensions().is_none(),
+            scrollbar_width,
         );
 
         info!("Cell size: {cell_width} x {cell_height}");
@@ -539,6 +593,7 @@ impl Display {
             cursor_hidden: Default::default(),
             meter: Default::default(),
             ime: Default::default(),
+            scrollbar_drag_start: Default::default(),
         })
     }
 
@@ -688,6 +743,8 @@ impl Display {
         }
 
         let padding = config.window.padding(self.window.scale_factor as f32);
+        let scrollbar_width =
+            config.window.scrollbar.physical_width(self.window.scale_factor as f32);
 
         let mut new_size = SizeInfo::new(
             width,
@@ -697,6 +754,7 @@ impl Display {
             padding.0,
             padding.1,
             config.window.dynamic_padding,
+            scrollbar_width,
         );
 
         // Update number of column/lines in the viewport.
@@ -769,6 +827,69 @@ impl Display {
 
         info!("Padding: {} x {}", self.size_info.padding_x(), self.size_info.padding_y());
         info!("Width: {}, Height: {}", self.size_info.width(), self.size_info.height());
+    }
+
+    /// Minimum scrollbar thumb height in physical pixels.
+    pub const SCROLLBAR_MIN_THUMB_HEIGHT: f32 = 50.;
+
+    /// Returns the bounding rect `(x, y, width, height)` of the scrollbar thumb.
+    ///
+    /// Returns `None` when the scrollbar is hidden or there is no scrollback.
+    pub fn scrollbar_thumb_rect(
+        &self,
+        display_offset: usize,
+        total_lines: usize,
+    ) -> Option<(f32, f32, f32, f32)> {
+        let scrollbar_width = self.size_info.scrollbar_width();
+        if scrollbar_width <= 0. {
+            return None;
+        }
+
+        let (thumb_y, thumb_h, _) = self.size_info.scrollbar_thumb_geometry(
+            display_offset,
+            total_lines,
+            Self::SCROLLBAR_MIN_THUMB_HEIGHT,
+        )?;
+        let track_x = self.size_info.width() - scrollbar_width;
+
+        Some((track_x, thumb_y, scrollbar_width, thumb_h))
+    }
+
+    /// Build the rects for the scrollbar track and thumb.
+    ///
+    /// Returns an empty vec when no scrollbar is configured.
+    fn build_scrollbar_rects(
+        &self,
+        config: &UiConfig,
+        display_offset: usize,
+        total_lines: usize,
+    ) -> Vec<RenderRect> {
+        let scrollbar_width = self.size_info.scrollbar_width();
+        if scrollbar_width <= 0. {
+            return vec![];
+        }
+
+        let track_x = self.size_info.width() - scrollbar_width;
+        let track_h = self.size_info.height();
+
+        let mut rects = Vec::new();
+
+        // Track background.
+        rects.push(RenderRect::new(
+            track_x,
+            0.,
+            scrollbar_width,
+            track_h,
+            config.window.scrollbar.track_color,
+            1.,
+        ));
+
+        // Thumb.
+        if let Some((tx, ty, tw, th)) = self.scrollbar_thumb_rect(display_offset, total_lines) {
+            rects.push(RenderRect::new(tx, ty, tw, th, config.window.scrollbar.thumb_color, 1.));
+        }
+
+        rects
     }
 
     /// Draw the screen.
@@ -964,6 +1085,9 @@ impl Display {
                 self.draw_ime_preview(point, fg, bg, &mut rects, config);
             }
         }
+
+        // Draw scrollbar track and thumb.
+        rects.extend(self.build_scrollbar_rects(config, display_offset, total_lines));
 
         if let Some(message) = message_buffer.message() {
             let search_offset = usize::from(search_state.regex().is_some());
@@ -1627,11 +1751,12 @@ fn window_size(
     scale_factor: f32,
 ) -> PhysicalSize<u32> {
     let padding = config.window.padding(scale_factor);
+    let scrollbar_width = config.window.scrollbar.physical_width(scale_factor);
 
     let grid_width = cell_width * dimensions.columns.max(MIN_COLUMNS) as f32;
     let grid_height = cell_height * dimensions.lines.max(MIN_SCREEN_LINES) as f32;
 
-    let width = (padding.0).mul_add(2., grid_width).floor();
+    let width = (padding.0).mul_add(2., grid_width).floor() + scrollbar_width;
     let height = (padding.1).mul_add(2., grid_height).floor();
 
     PhysicalSize::new(width as u32, height as u32)
