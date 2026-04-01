@@ -724,6 +724,10 @@ impl Display {
             self.damage_tracker.resize(new_size.screen_lines(), new_size.columns());
         }
 
+        // Update window title with new dimensions.
+        #[cfg(target_os = "macos")]
+        self.window.set_title_dimensions(&new_size);
+
         // Check if dimensions have changed.
         if new_size != self.size_info {
             // Queue renderer update.
