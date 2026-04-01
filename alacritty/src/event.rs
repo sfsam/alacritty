@@ -66,7 +66,7 @@ use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::window_context::WindowContext;
 
 #[cfg(target_os = "macos")]
-use {indexmap::map::IndexMap, objc2_foundation::NSPoint};
+use {crate::macos, indexmap::map::IndexMap, objc2_foundation::NSPoint};
 
 /// Duration after the last user input until an unlimited search is performed.
 pub const TYPING_SEARCH_DELAY: Duration = Duration::from_millis(500);
@@ -267,6 +267,9 @@ impl ApplicationHandler<Event> for Processor {
                 return;
             }
         }
+
+        #[cfg(target_os = "macos")]
+        macos::menu::install_settings_menu_item(self.config.config_paths.first().cloned());
 
         info!("Initialisation complete");
     }
